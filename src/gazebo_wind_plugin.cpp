@@ -34,9 +34,6 @@ void GazeboWindPlugin::Load(physics::WorldPtr world, sdf::ElementPtr sdf) {
   double wind_gust_start = kDefaultWindGustStart;
   double wind_gust_duration = kDefaultWindGustDuration;
 
-  double wind_ramp_start = kDefaultWindRampStart;
-  double wind_ramp_duration = kDefaultWindRampDuration;
-
   if (sdf->HasElement("robotNamespace")) {
     namespace_ = sdf->GetElement("robotNamespace")->Get<std::string>();
   } else {
@@ -46,6 +43,10 @@ void GazeboWindPlugin::Load(physics::WorldPtr world, sdf::ElementPtr sdf) {
   node_handle_ = transport::NodePtr(new transport::Node());
   node_handle_->Init(namespace_);
 
+  if (sdf->HasElement("xyzOffset"))
+    xyz_offset_ = sdf->GetElement("xyzOffset")->Get<ignition::math::Vector3d>();
+  else
+    gzerr << "[gazebo_wind_plugin] Please specify a xyzOffset.\n";
 
   getSdfParam<std::string>(sdf, "windPubTopic", wind_pub_topic_, wind_pub_topic_);
   double pub_rate = 2.0;
@@ -61,7 +62,7 @@ void GazeboWindPlugin::Load(physics::WorldPtr world, sdf::ElementPtr sdf) {
   // Get the wind gust params from SDF.
   getSdfParam<double>(sdf, "windGustStart", wind_gust_start, wind_gust_start);
   getSdfParam<double>(sdf, "windGustDuration", wind_gust_duration, wind_gust_duration);
-  getSdfParam<double>(sdf, "windGustVelocityMean", wind_gust_velocity_mean_, wind_gust_velocity_mean_);
+  getSdfParam<double>(sdf, "windGustVeloctiyMean", wind_gust_velocity_mean_, wind_gust_velocity_mean_);
   getSdfParam<double>(sdf, "windGustVelocityMax", wind_gust_velocity_max_, wind_gust_velocity_max_);
   getSdfParam<double>(sdf, "windGustVelocityVariance", wind_gust_velocity_variance_, wind_gust_velocity_variance_);
   getSdfParam<ignition::math::Vector3d>(sdf, "windGustDirectionMean", wind_gust_direction_mean_, wind_gust_direction_mean_);
@@ -83,14 +84,6 @@ void GazeboWindPlugin::Load(physics::WorldPtr world, sdf::ElementPtr sdf) {
   wind_gust_direction_distribution_X_.param(std::normal_distribution<double>::param_type(wind_gust_direction_mean_.X(), sqrt(wind_gust_direction_variance_)));
   wind_gust_direction_distribution_Y_.param(std::normal_distribution<double>::param_type(wind_gust_direction_mean_.Y(), sqrt(wind_gust_direction_variance_)));
   wind_gust_direction_distribution_Z_.param(std::normal_distribution<double>::param_type(wind_gust_direction_mean_.Z(), sqrt(wind_gust_direction_variance_)));
-
-  // Get the ramped wind params from SDF.
-  getSdfParam<double>(sdf, "windRampStart", wind_ramp_start, wind_ramp_start);
-  getSdfParam<double>(sdf, "windChangeRampDuration", wind_ramp_duration, wind_ramp_duration);
-  getSdfParam<ignition::math::Vector3d>(sdf, "windRampWindVectorComponents", ramped_wind_vector, ramped_wind_vector);
-
-  wind_ramp_start_ = common::Time(wind_ramp_start);
-  wind_ramp_duration_ = common::Time(wind_ramp_duration);
 
   // Listen to the update event. This event is broadcast every
   // simulation iteration.
@@ -144,14 +137,6 @@ void GazeboWindPlugin::OnUpdate(const common::UpdateInfo& _info) {
     wind_gust_direction.Z() = wind_gust_direction_distribution_Z_(wind_gust_direction_generator_);
     wind_gust = wind_gust_strength * wind_gust_direction;
   }
-
-  // Calculate the wind with the added ramped up wind component
-  double ramp_factor = 0.;
-  if (wind_ramp_duration_.Double() > 0) {
-    ramp_factor = constrain((now - wind_ramp_start_).Double() / wind_ramp_duration_.Double(), 0., 1.);
-  }
-
-  wind += ramp_factor * ramped_wind_vector;
 
   gazebo::msgs::Vector3d* wind_v = new gazebo::msgs::Vector3d();
   wind_v->set_x(wind.X() + wind_gust.X());
