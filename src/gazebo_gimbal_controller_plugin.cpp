@@ -654,9 +654,9 @@ void GimbalControllerPlugin::SendGimbalDeviceInformation()
     mavlinkChannel,
     &msg,
     timeMs,
-    std::string("PX4").c_str(),
-    std::string("Gazebo SITL").c_str(),
-    std::string("").c_str(), // custom_name
+    "PX4",
+    "Gazebo SITL",
+    "", // custom_name
     firmwareVersion,
     hardwareVersion,
     uid,
@@ -676,20 +676,9 @@ void GimbalControllerPlugin::SendGimbalDeviceAttitudeStatus()
   const common::Time time = this->model->GetWorld()->SimTime();
   const uint32_t timeMs = time.sec * 1000 + time.nsec / 1000000;
 
-  const uint16_t flags =
-    GIMBAL_DEVICE_FLAGS_ROLL_LOCK |
-    GIMBAL_DEVICE_FLAGS_PITCH_LOCK |
-    (this->yawLock ? GIMBAL_DEVICE_FLAGS_YAW_LOCK : 0);
+  const uint16_t flags {0};
 
-  auto q = q_ENU_to_NED * this->cameraImuSensor->Orientation() * q_FLU_to_FRD.Inverse();
-
-  if (!this->yawLock) {
-    // In follow mode we need to transform the absolute camera orientation to an orientation
-    // relative to the vehicle because that's what the gimbal protocol suggests.
-    const auto q_vehicle = q_ENU_to_NED * ignition::math::Quaterniond(0.0, 0.0, this->vehicleYawRad) * q_FLU_to_FRD.Inverse();
-    const auto e = q.Euler();
-    q.Euler(e[0], e[1], e[2] - q_vehicle.Euler()[2]);
-  }
+  const auto q = q_ENU_to_NED * this->cameraImuSensor->Orientation() * q_FLU_to_FRD.Inverse();
 
   const float qArr[4] = {
     static_cast<float>(q.W()),
@@ -832,11 +821,8 @@ void GimbalControllerPlugin::HandleGimbalDeviceSetAttitude(const mavlink_message
     this->yawRateSetpoint = NAN;
 
   } else {
-    const auto euler = detail::QtoZXY(ignition::math::Quaterniond(
-			    set_attitude.q[0], set_attitude.q[1], set_attitude.q[2], set_attitude.q[3]));
-    const float pitchRad = euler[0];
-    const float rollRad = euler[1];
-    const float yawRad = euler[2];
+    float rollRad, pitchRad, yawRad;
+    mavlink_quaternion_to_euler(&set_attitude.q[0], &rollRad, &pitchRad, &yawRad);
 
     const std::lock_guard<std::mutex> lock(setpointMutex);
     this->rollSetpoint = rollRad;
